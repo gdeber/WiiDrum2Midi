@@ -4,6 +4,8 @@
 
 import argparse
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import evdev
 from evdev import ecodes
@@ -57,6 +59,26 @@ def _send_message(port, msg):
     if args.verbose:
         print("Sent", msg)
     port.send_message(msg)
+
+def _parse_ev(ev):
+    if ev.type == evdev.ecodes.EV_ABS:
+        note = key_code_to_midi_note(ev.code)
+        if note is not None:
+            if ev.value == 0:
+                if args.verbose:
+                    print('note off')
+                #_send_message(midiout, [midiconstants.NOTE_OFF + args.channel, (note + args.transpose) % 127, 0])
+            else:
+                velocity =round((127.0 / 7.0 ) * ev.value) % 128
+                if args.verbose:
+                    print('value: {} vel: {}'.format(ev.value, velocity))
+
+                _send_message(midiout, [midiconstants.NOTE_ON + args.channel, (note + args.transpose) % 127, velocity])
+                time.sleep(0.5)
+                _send_message(midiout, [midiconstants.NOTE_OFF + args.channel, (note + args.transpose) % 127, 0])
+
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="WII Drum to MIDI")
@@ -117,21 +139,11 @@ def main():
 
     if args.grab:
         dev.grab()
-
-    for ev in dev.read_loop():
-        if ev.type == evdev.ecodes.EV_ABS:
-            note = key_code_to_midi_note(ev.code)
-            if note is not None:
-                if ev.value == 0:
-                    if args.verbose:
-                        print('note off')
-                    #_send_message(midiout, [midiconstants.NOTE_OFF + args.channel, (note + args.transpose) % 127, 0])
-                else:
-                    velocity =round((127.0 / 7.0 ) * ev.value) % 128
-                    if args.verbose:
-                        print('value: {} vel: {}'.format(ev.value, velocity))
-                    _send_message(midiout, [midiconstants.NOTE_ON + args.channel, (note + args.transpose) % 127, velocity])
-
+    
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        for ev in dev.read_loop():
+            future=executor.submit(_parse_ev,ev)
+        
     if args.grab:
         dev.ungrab()
 
