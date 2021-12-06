@@ -60,7 +60,7 @@ def _send_message(port, msg):
         print("Sent", msg)
     port.send_message(msg)
 
-def _parse_ev(ev):
+def _parse_ev(ev, midiout):
     if ev.type == evdev.ecodes.EV_ABS:
         note = key_code_to_midi_note(ev.code)
         if note is not None:
@@ -73,8 +73,10 @@ def _parse_ev(ev):
                 if args.verbose:
                     print('value: {} vel: {}'.format(ev.value, velocity))
 
+                print('Sending...')
                 _send_message(midiout, [midiconstants.NOTE_ON + args.channel, (note + args.transpose) % 127, velocity])
                 time.sleep(0.5)
+                print('Sending...off')
                 _send_message(midiout, [midiconstants.NOTE_OFF + args.channel, (note + args.transpose) % 127, 0])
 
 
@@ -142,7 +144,10 @@ def main():
     
     with ThreadPoolExecutor(max_workers=16) as executor:
         for ev in dev.read_loop():
-            future=executor.submit(_parse_ev,ev)
+            future=executor.submit(_parse_ev,ev,midiout)
+            excp=future.exception()
+            if excp != None:
+                print(excp)
         
     if args.grab:
         dev.ungrab()
